@@ -2,7 +2,7 @@
 
 Repository for working code related to the research project.
 
-An Overleaf is in progress. For now, please see `notes.pdf` for an initial overview.
+An Overleaf is in progress. For now, please see `notes.pdf` for a rough overview.
 
 Most working code is in `matrix_network.py` and `main.py`.
 

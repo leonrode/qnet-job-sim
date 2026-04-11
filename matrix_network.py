@@ -42,15 +42,29 @@ class MatrixNetwork:
         # M is a vector of length N where M[i] is the number of quantum memories remaining for node N_i.
         # we make a copy to leave the original memories unchanged
         self.memory_states = np.copy(memories)
-    """
-    Returns the adjacency matrix of the subnetwork of active links whose age >= duration
-    """
     def __edge_states_to_adjacency_matrix(self, duration):
+        """
+        Returns the adjacency matrix of the subnetwork of active links whose age >= duration
+        """
         adjacency_matrix = np.zeros((self._N, self._N), dtype=np.int16)
         for i in range(self._N):
             for j in range(self._N):
                 if self.edge_states[i, j, 0] != -1                    and \
                    self.mstar - self.edge_states[i, j, 0] >= duration and \
+                   not self._is_link_assigned(i, j): # active link with age <= mstar - duration
+                    adjacency_matrix[i, j] = 1 # indicate presence of edge
+        return adjacency_matrix
+    
+    def __active_unassigned_links_graph(self, age=0):
+        """
+        Returns the adjacency matrix of the subgraph of active, unassigned links of age >= `age`
+        """
+        adjacency_matrix = np.zeros((self._N, self._N), dtype=np.int16)
+        for i in range(self._N):
+            for j in range(self._N):
+                if self._edge_exists(i, j) and \
+                   self._is_link_active(i, j)                        and \
+                   self._get_link_age(i, j) >= age                   and \
                    not self._is_link_assigned(i, j): # active link with age <= mstar - duration
                     adjacency_matrix[i, j] = 1 # indicate presence of edge
         return adjacency_matrix
@@ -71,6 +85,10 @@ class MatrixNetwork:
         if i < 0 or i >= self._N:
             raise ValueError(f"Node {i} is not in the network")
         return self.memory_states[i] > 0
+    def _get_memory_count(self, i):
+        if i < 0 or i >= self._N:
+            raise ValueError(f"Node {i} is not in the network")
+        return self.memory_states[i]
     
     def _activate_link(self, i, j):
         """
@@ -93,7 +111,7 @@ class MatrixNetwork:
         return False
 
     def _edge_exists(self, i, j):
-        return self.net_graph.are_connected(i, j)
+        return self.net_graph.are_connected(i, j) or self.edge_states[i, j, 0] != -1
     
     def _deactivate_link(self, i, j):
         if not self._edge_exists(i, j):
@@ -154,42 +172,108 @@ class MatrixNetwork:
         if self.edge_states[i, j, 0] == -1:
             raise ValueError(f"Link {i} {j} is inactive")
         return self.edge_states[i, j, 1] > 0
+    
+    def assign_virtual_link(self, i, j):
+        """
+        Assigns a virtual link between nodes i and j on the graph.
+
+        The operation succeeds only if a path of active, unassigned links exists between i and j on the graph and the
+        age of each link in the path is greater than the length of the path (prevents links dying before virtual link is created).
+
+        The operation is performed instantaneously, i.e. all intermediate links are deactivated in the process of creating the virtual link.
+        """
+
+        if self._edge_exists(i, j):
+            return False # would be masked out 
+            raise ValueError(f"Edge {i} {j} already exists")
+        
+
+        # get the graph of active links between i and j
+        active_graph = igraph.Graph.Adjacency(self.__active_unassigned_links_graph(), mode="undirected")
+        
+        # get the shortest path between i and j
+        path = active_graph.get_shortest_path(i, j, output="vpath")
+
+        print(f"Path between {i} and {j}: {path}")
+        if len(path) < 2:
+            return False
+        
+        # calculate the maximum age of the intermediate links
+        virtual_link_age = 0
+        for k in range(1, len(path)):
+            age = self._get_link_age(path[k-1], path[k])
+            virtual_link_age = max(virtual_link_age, age)
+
+            self._deactivate_link(path[k-1], path[k])
+
+        # self._deactivate_link will increment the memories of end points,
+        # so we decrement the end points again for the new virtual link
+        self._decrement_memory(i)
+        self._decrement_memory(j)
+
+        self.edge_states[i, j, 0] = virtual_link_age # set age to 0
+        self.edge_states[i, j, 1] = 0 # ensure unassigned
+
+        self.edge_states[j, i, 0] = virtual_link_age # set age to 0
+        self.edge_states[j, i, 1] = 0 # ensure unassigned
+
+        return True
 
 
+    def __get_active_topology(self, duration):
+            """
+            Generates an adjacency matrix of all links (physical or virtual) 
+            that are active, unassigned, and will survive for the 'duration'.
+            """
+            adj = np.zeros((self._N, self._N), dtype=np.int16)
+            
+            # A link survives if: current_age + duration <= mstar
+            # => current_age <= mstar - duration
+            max_age = self.mstar - duration
+            
+            for i in range(self._N):
+                for j in range(i + 1, self._N):
+                    age = self.edge_states[i, j, 0]
+                    is_assigned = self.edge_states[i, j, 1] > 0
+                    
+                    if age != -1 and age <= max_age and not is_assigned:
+                        adj[i, j] = 1
+                        adj[j, i] = 1
+            return adj
     def get_possible_experiment_assignments(self, experiment):
         """
         Returns a list of possible experiment assignments for the given experiment w.r.t the current network state.
         Experiment is a tuple (adjacency_matrix, duration).
 
-        Links are only considered if they are active and have an age greater than or equal to the experiment duration.
+        Links are only considered if they are active, unassigned, and have an age greater than or equal to the experiment duration.
         """
-        adjacency_matrix, duration = experiment
+        adj_matrix, duration = experiment
 
-        # build a temporary graph with the given adjacency matrix
-        temp_graph = igraph.Graph.Adjacency(adjacency_matrix, mode="undirected")
+        # 1. Build the target graph (the experiment structure)
+        temp_graph = igraph.Graph.Adjacency(adj_matrix, mode="undirected")
         exp_edges = temp_graph.get_edgelist()
 
-        # build a graph of the current network state
-        # transform the edge_states matrix into an adjacency matrix
-        active_graph = igraph.Graph.Adjacency(self.__edge_states_to_adjacency_matrix(duration), mode="undirected")
+        # 2. Build the current available graph (Physical + Virtual)
+        # Only include links that won't decohere before the experiment ends
+        active_adj = self.__get_active_topology(duration)
+        active_graph = igraph.Graph.Adjacency(active_adj, mode="undirected")
 
-        # get all subgraphs of the temporary graph that are isomorphic to the active graph
+        # 3. Find subisomorphisms (mappings from experiment to active network)
         isomorphic_subgraphs = active_graph.get_subisomorphisms_lad(temp_graph)
         
-        # unique under relabeling of nodes
         unique_assignments = {}
         for m in isomorphic_subgraphs:
-            physical_links = []
+            # Map experiment edges to physical/virtual node IDs
+            resource_links = []
             for u, v in exp_edges:
                 p_u, p_v = m[u], m[v]
-                physical_links.append(tuple(sorted((p_u, p_v))))
+                resource_links.append(tuple(sorted((p_u, p_v))))
             
-            resource_key = frozenset(physical_links)
-            
+            # Key by the set of links used to avoid duplicates from symmetry
+            resource_key = frozenset(resource_links)
             if resource_key not in unique_assignments:
                 unique_assignments[resource_key] = m
                 
-
         return list(unique_assignments.values())
 
     def get_valid_swaps(self):
@@ -233,7 +317,7 @@ class MatrixNetwork:
     - If an active link's age is greater than mstar, it is deactivated and set to -1.
     """
     def env_step(self):
-        # iterate over all links and increment their age if active, otherwise activate
+        # iterate over all links and increment their age if active, otherwise activate if they have enough memories
         for i in range(self._N):
             for j in range(i + 1, self._N): # only iterate over upper triangle to avoid double counting
                 if not self._edge_exists(i, j):
@@ -247,7 +331,7 @@ class MatrixNetwork:
                     if self._get_link_age(i, j) > self.mstar: # deactivation
                         self._deactivate_link(i, j)
                 
-                else:
+                elif self._has_unused_memory(i) and self._has_unused_memory(j):
                     self._activate_link(i, j)
 
     def get_observation(self):

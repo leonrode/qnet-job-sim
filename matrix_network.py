@@ -3,11 +3,11 @@ This module implemnts the environment as the markov decision process (S, A, P, R
 in the form of matrices and uses igraph purely for subgraph isomorphism checking.
 """
 
-from sqlite3 import adapt
 import numpy as np
 import igraph
 import random
 import matplotlib.pyplot as plt
+import itertools
 """
 The adjacency matrix is the |N| times |N| matrix where each entry is the optical link length
 between the two nodes. This matrix is immutable and represents the static physical link topology
@@ -68,6 +68,41 @@ class MatrixNetwork:
                    not self._is_link_assigned(i, j): # active link with age <= mstar - duration
                     adjacency_matrix[i, j] = 1 # indicate presence of edge
         return adjacency_matrix
+
+    def _get_generateable_virtual_links(self):
+        """
+        Returns a list of all node pairs (i, j) that can currently form a virtual link.
+        A virtual link is possible if:
+        1. A path of active, unassigned links exists between i and j.
+        2. No physical link or active virtual link currently exists between i and j.
+        """
+        # 1. Build the adjacency matrix for the subgraph of active, unassigned links
+        # This includes both physical and existing virtual links that are active
+        active_unassigned_adj = self.__active_unassigned_links_graph()
+        
+        # 2. Create a temporary igraph object to analyze reachability
+        g = igraph.Graph.Adjacency(active_unassigned_adj, mode="undirected")
+        
+        # 3. Find connected components (nodes that can reach each other)
+        components = g.connected_components()
+        
+        possible_virtual_links = []
+        
+        for component in components:
+            # We need at least 2 nodes to form a pair
+            if len(component) < 2:
+                continue
+            
+            # 4. For every unique pair in the component, check if they are already connected
+            for i, j in itertools.combinations(component, 2):
+                # _edge_exists returns True if they are physical neighbors 
+                # OR if they already have an active virtual link.
+                if not self._edge_exists(i, j):
+                    # Use sorted tuple to maintain consistency (i < j)
+                    possible_virtual_links.append(tuple(sorted((i, j))))
+        
+        return possible_virtual_links
+ 
 
     def _decrement_memory(self, i):
         if i < 0 or i >= self._N:
@@ -194,7 +229,7 @@ class MatrixNetwork:
         # get the shortest path between i and j
         path = active_graph.get_shortest_path(i, j, output="vpath")
 
-        print(f"Path between {i} and {j}: {path}")
+        #print(f"Path between {i} and {j}: {path}")
         if len(path) < 2:
             return False
         
@@ -290,7 +325,6 @@ class MatrixNetwork:
             
             # If node j has at least 2 such neighbors, any pair of them is a valid swap
             if len(neighbors) >= 2:
-                import itertools
                 for i, k in itertools.combinations(neighbors, 2):
                     valid_triplets.append((i, j, k))
         return valid_triplets

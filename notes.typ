@@ -1,4 +1,5 @@
 #import "@preview/cheq:0.3.0": checklist
+#import "@preview/cetz:0.4.2" 
 #show: checklist
 
 #set text(font: "New Computer Modern", size: 12pt)
@@ -76,3 +77,135 @@ Implementation Todos:
   - [ ] Implement policy training
     - [ ] Define action masking
     - [ ] Define reward function 
+
+
+= Calculation of Size of Action Space
+
+Let the number of nodes be $N$. Let the total number of physical links be $|E|$. 
+
+The agent can do one of the following:
+1. Wait
+2. Establish a virtual link
+3. Assign an experiment
+
+The cardinality of the action space is 1 + maximum number of possible virtual links to choose from + maximum number of experiment mappings to choose from
+
+The maximum number of virtual links to choose from is the total number of possible node-node pairs minus the number of physical links, i.e.
+$
+  "number of virtual links" = |V| = N(N-1)\/2 - |E|
+$
+
+For each experiment we count the number of permutation-invariant subisomorphisms of the experiment topology on the complete graph $K_N$, i.e. the complete, maximum-connectivity graph on $N$ nodes. For experiment $X_j$, let $"Map"_K_N (X_j)$ be the number of such isomorphisms of $X_j$'s topology on $K_N$. Then the total size of the action space is
+
+$
+  |A| = 1 + |V| + sum_(j = 1)^n "Map"_K_N (X_j)
+$
+
+Let's consider a concrete example of an 3 by 3 grid network of nodes, each with a number of quantum memories equal to the degree of the node. Then $N=9$ and $|E| = 12$, and the total number of possible virtual links is $|V| = 24$. 
+#align(center)[
+  #cetz.canvas({
+    import cetz.draw: *
+
+    for i in range(3) {
+      for j in range(3) {
+        if (i < 2){
+          line((i, j), (i+1, j))
+        }
+        if (j < 2){
+          line((i, j), (i, j+1))
+        }
+        circle((i, j), radius: 0.5em, fill: white)
+      }
+    }
+  })
+]
+
+Let's say we have four experiments with the following topologies:
+
+
+#align(center)[
+  #stack(dir: ltr, spacing: 1em, 
+   cetz.canvas({
+  import cetz.draw: *
+
+  line((0, 0), (1, 0))
+  line((1, 0), (1, 1))
+  line((0, 0), (1, 1))
+  circle((0, 0), radius: 0.5em, fill: white)
+  circle((1, 0), radius: 0.5em, fill: white)
+  circle((1, 1), radius: 0.5em, fill: white)
+  
+}),
+   cetz.canvas({
+  import cetz.draw: *
+
+  line((0, 0), (0, 1))
+  line((0, 1), (1, 1))
+  line((1, 0), (0, 0))
+  line((1, 0), (1, 1))
+  circle((0, 0), radius: 0.5em, fill: white)
+  circle((0, 1), radius: 0.5em, fill: white)
+  circle((1, 0), radius: 0.5em, fill: white)
+  circle((1, 1), radius: 0.5em, fill: white)
+}),
+cetz.canvas({
+  import cetz.draw: *
+
+  line((0, 0), (0, 1))
+  line((0, 1), (1, 1))
+  line((1, 0), (0, 0))
+  line((0, 1), (2, 1))
+  line((1, 0), (2, 0))
+  line((2, 0), (2, 1))
+  circle((0, 0), radius: 0.5em, fill: white)
+  circle((0, 1), radius: 0.5em, fill: white)
+  circle((1, 0), radius: 0.5em, fill: white)
+  circle((1, 1), radius: 0.5em, fill: white)
+  circle((2, 0), radius: 0.5em, fill: white)
+  circle((2, 1), radius: 0.5em, fill: white)
+}),
+cetz.canvas({
+  import cetz.draw: *
+
+  line((0, 0), (0, 1))
+  line((0, 1), (1, 1))
+  line((1, 0), (0, 0))
+  line((0, 1), (2, 1))
+  line((1, 0), (2, 0))
+  line((2, 0), (2, 1))
+  line((0, 0), (1, 1))
+  line((1, 0), (2, 1))
+  circle((0, 0), radius: 0.5em, fill: white)
+  circle((0, 1), radius: 0.5em, fill: white)
+  circle((1, 0), radius: 0.5em, fill: white)
+  circle((1, 1), radius: 0.5em, fill: white)
+  circle((2, 0), radius: 0.5em, fill: white)
+  circle((2, 1), radius: 0.5em, fill: white)
+}),
+
+  )
+]
+
+Then there are 84 mappings for the first topology, 378 for the second topology, 5040 for the third, and 15120 for the fourth. Then the full action space is 1 + 24 + 84 + 378 + 5040 + 15120 = 20,622 actions, which is huge.
+
+However, maybe the full $K_N$ is too large than what will realistically happen under the dynamics of the network. Let's plot the number of virtual links possible to assign over time steps for the grid network, also plot the ratio of this number to the total number of possible links in $K_N$. 
+
+#align(center)[ #image("plotgrid.png", width: 100%)]
+
+We see the average number of virtual links possible to assign is 13.89 out of a total of 24 possible virtual (non-physical) links or about 57%. But sometimes all of them _are_ possible, which makes things difficult. Some setups where the ratio is smaller is if the ratio of physical links to to total links is small. For example, let's consider a linear chain of 9 nodes:
+#align(center)[
+  #cetz.canvas({
+    import cetz.draw: *
+
+    for i in range(9) {
+      if (i < 8) {
+        line((i, 0), (i+1, 0))
+      }
+      circle((i, 0), radius: 0.5em, fill: white)
+    }
+  })
+]
+Here's the graph for the number of virtual links:
+#align(center)[ #image("plotlinear.png", width: 100%)]
+
+The average here is 2.16 out of a total of 24 possible virtual links, or about 9%. So clearly, most of the time we only need to consider a small subset of the possible virtual links.

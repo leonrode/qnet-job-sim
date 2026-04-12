@@ -8,7 +8,7 @@ Most working code is in `matrix_network.py` and `main.py`.
 
 `matrix_network.py` exposes a `MatrixNetwork` class that handles the dynamics of the environment (probabilistic link generation, aging, etc.). 
 
-`main.py` contains the driver code, defining a grid network with max link age $m^* = 10$ time steps and a square experiment topology with a duration of 5 time steps.
+`main.py` contains the driver code, defining a grid network with max link age $m^* = 10$ time steps and a square experiment topology with a duration of 5 time steps. The "agent" selects virtual link generation and experiment assignment with equal probability.
 
 Install the dependencies in `requirements.txt` and run `main.py`. The network will be plotted at each time step (close the plot to continue to the next time step) indefinitely. 
 

@@ -191,6 +191,7 @@ Then there are 84 mappings for the first topology, 378 for the second topology, 
 However, maybe the full $K_N$ is too large than what will realistically happen under the dynamics of the network. Let's plot the number of virtual links possible to assign over time steps for the grid network, also plot the ratio of this number to the total number of possible links in $K_N$. 
 
 #align(center)[ #image("plotgrid.png", width: 100%)]
+#align(center)[ #image("gridbargraph.png", width: 100%)]
 
 We see the average number of virtual links possible to assign is 13.89 out of a total of 24 possible virtual (non-physical) links or about 57%. But sometimes all of them _are_ possible, which makes things difficult. Some setups where the ratio is smaller is if the ratio of physical links to to total links is small. For example, let's consider a linear chain of 9 nodes:
 #align(center)[
@@ -207,5 +208,6 @@ We see the average number of virtual links possible to assign is 13.89 out of a 
 ]
 Here's the graph for the number of virtual links:
 #align(center)[ #image("plotlinear.png", width: 100%)]
+#align(center)[ #image("linearbargraph.png", width: 100%)]
 
-The average here is 2.16 out of a total of 24 possible virtual links, or about 9%. So clearly, most of the time we only need to consider a small subset of the possible virtual links.
+The average here is 2.16 out of a total of 24 possible virtual links, or about 9%. So clearly, most of the time we only need to consider a small subset of the possible virtual links. 
